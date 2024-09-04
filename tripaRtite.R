@@ -2,33 +2,106 @@ library(shiny)
 library(ggplot2)
 library(tidyverse)
 
-# Define UI for the application
+
+max_value <- 3 # Max value for contribution sliders.
+
+# Define UI
 ui <- fluidPage(
   # Application title
-  titlePanel("Dynamic Model Simulation"),
+  titlePanel("Tripartite Model Simulation"),
   
-  # Sidebar with sliders for parameters
+  # Sidebar layout with input and output definitions
   sidebarLayout(
     sidebarPanel(
       sliderInput("tmax", "Time (tmax):", min = 50, max = 500, value = 100, step = 10),
-      sliderInput("k", "k:", min = 1, max = 20, value = 10, step = .1),
-      sliderInput("b", "b:", min = 50, max = 200, value = 100, step = 1),
-      sliderInput("dBV", "dBV:", min = 0.1, max = 1, value = 0.2, step = 0.1),
-      sliderInput("dHB", "dHB:", min = 0.1, max = 1, value = 0.3, step = 0.1),
+      # sliderInput("k", "k:", min = 1, max = 20, value = 10, step = .1),
+      # sliderInput("b", "b:", min = 50, max = 200, value = 100, step = 1),
+      sliderInput("dBV", "Bacterial absorbtion rate of viruses (dBV):", min = 0.1, max = 1, value = 0.2, step = 0.1),
+      sliderInput("dHB", "Host absorbtion rate of bacteria (dHB):", min = 0.1, max = 1, value = 0.3, step = 0.1),
       sliderInput("initial_H", "Initial Hosts:", min = 0, max = 100, value = 50, step = 5),
       sliderInput("initial_B", "Initial Bacteria:", min = 0, max = 100, value = 50, step = 5),
-      sliderInput("initial_V", "Initial Virus:", min = 0, max = 100, value = 50, step = 5)
+      sliderInput("initial_V", "Initial Virus:", min = 0, max = 100, value = 50, step = 5),
     ),
     
-    # Show the plot
     mainPanel(
-      plotOutput("distPlot")
+      plotOutput("distPlot"),
+      
+      # Sliders for FH, FB, FV below the plot
+      h3("Contribution to Pools"),
+      fluidRow(
+        column(3, sliderInput("FH1", "FH[1]:", min = 0, max = max_value, value = 1, step = 0.1)),
+        column(3, sliderInput("FH2", "FH[2]:", min = 0, max = max_value, value = 1, step = 0.1)),
+        column(3, sliderInput("FH3", "FH[3]:", min = 0, max = max_value, value = 1, step = 0.1)),
+        column(3, sliderInput("FH4", "FH[4]:", min = 0, max = max_value, value = 1, step = 0.1))
+      ),
+      fluidRow(
+        column(3, sliderInput("FB1", "FB[1]:", min = 0, max = max_value, value = 1, step = 0.1)),
+        column(3, sliderInput("FB2", "FB[2]:", min = 0, max = max_value, value = 1, step = 0.1)),
+        column(3, sliderInput("FB3", "FB[3]:", min = 0, max = max_value, value = 1, step = 0.1)),
+        column(3, sliderInput("FB4", "FB[4]:", min = 0, max = max_value, value = 1, step = 0.1))
+      ),
+      fluidRow(
+        column(3, sliderInput("FV1", "FV[1]:", min = 0, max = max_value, value = 1, step = 0.1)),
+        column(3, sliderInput("FV2", "FV[2]:", min = 0, max = max_value, value = 1, step = 0.1)),
+        column(3, sliderInput("FV3", "FV[3]:", min = 0, max = max_value, value = 1, step = 0.1)),
+        column(3, sliderInput("FV4", "FV[4]:", min = 0, max = max_value, value = 1, step = 0.1))
+      ),
+      
+      # Randomize buttons
+      fluidRow(
+        column(3, actionButton("randomize_FH", "Randomize FH")),
+        column(3, actionButton("randomize_FB", "Randomize FB")),
+        column(3, actionButton("randomize_FV", "Randomize FV")),
+        column(3, actionButton("randomize_all", "Randomize All"))
+      )
     )
   )
 )
 
+
+
+
 # Define server logic required to draw the plot
-server <- function(input, output) {
+server <- function(input, output, session) {
+  
+  observeEvent(input$randomize_FH, {
+    updateSliderInput(session, "FH1", value = runif(1, 0, max_value))
+    updateSliderInput(session, "FH2", value = runif(1, 0, max_value))
+    updateSliderInput(session, "FH3", value = runif(1, 0, max_value))
+    updateSliderInput(session, "FH4", value = runif(1, 0, max_value))
+  })
+  
+  observeEvent(input$randomize_FB, {
+    updateSliderInput(session, "FB1", value = runif(1, 0, max_value))
+    updateSliderInput(session, "FB2", value = runif(1, 0, max_value))
+    updateSliderInput(session, "FB3", value = runif(1, 0, max_value))
+    updateSliderInput(session, "FB4", value = runif(1, 0, max_value))
+  })
+  
+  observeEvent(input$randomize_FV, {
+    updateSliderInput(session, "FV1", value = runif(1, 0, max_value))
+    updateSliderInput(session, "FV2", value = runif(1, 0, max_value))
+    updateSliderInput(session, "FV3", value = runif(1, 0, max_value))
+    updateSliderInput(session, "FV4", value = runif(1, 0, max_value))
+  })
+  
+  observeEvent(input$randomize_all, {
+    updateSliderInput(session, "FH1", value = runif(1, 0, max_value))
+    updateSliderInput(session, "FH2", value = runif(1, 0, max_value))
+    updateSliderInput(session, "FH3", value = runif(1, 0, max_value))
+    updateSliderInput(session, "FH4", value = runif(1, 0, max_value))
+    
+    updateSliderInput(session, "FB1", value = runif(1, 0, max_value))
+    updateSliderInput(session, "FB2", value = runif(1, 0, max_value))
+    updateSliderInput(session, "FB3", value = runif(1, 0, max_value))
+    updateSliderInput(session, "FB4", value = runif(1, 0, max_value))
+    
+    updateSliderInput(session, "FV1", value = runif(1, 0, max_value))
+    updateSliderInput(session, "FV2", value = runif(1, 0, max_value))
+    updateSliderInput(session, "FV3", value = runif(1, 0, max_value))
+    updateSliderInput(session, "FV4", value = runif(1, 0, max_value))
+  })
+  
   output$distPlot <- renderPlot({
     # -------- PARAMETERS ----------------------------
     # Setup the parameters.
@@ -36,9 +109,9 @@ server <- function(input, output) {
     
     k <- input$k
     b <- input$b
-    FH <- c(.9, 1.1, 1.4, 1.2)  # Contribution to host pool
-    FB <- c(0, k/2, k, k/2)  # Contribution to bacterial pool
-    FV <- c(0, b, 0, b*2)  # Contribution to viral pool
+    FH <- c(input$FH1, input$FH2, input$FH3, input$FH4)  # Contribution to host pool
+    FB <- c(input$FB1, input$FB2, input$FB3, input$FB4)  # Contribution to bacterial pool
+    FV <- c(input$FV1, input$FV2, input$FV3, input$FV4)  # Contribution to viral pool
     
     # Absorption rates
     dBV <- input$dBV
@@ -163,10 +236,14 @@ server <- function(input, output) {
       mapping = aes(x = t, y = value, color = variable, linetype = variable)
     ) +
       geom_line(size = 1.5, alpha = 0.7) +  # Adjust alpha here
-      scale_linetype_manual(values = c(H = "solid", B = "solid", V = "solid", 
-                                       H00 = "dotted", H01 = "dotted", H10 = "dotted", H11 = "dotted")) +
-      labs(x = "Time", y = "Abundance") +
-      theme(legend.title = element_blank(), legend.position = "bottom") 
+      scale_linetype_manual(values = c(
+        H = "solid", B = "solid", V = "solid",
+        H00 = "dotted", H01 = "dotted", H10 = "dotted", H11 = "dotted"
+      )) +
+      scale_y_log10() + 
+      labs(x = "Time", y = "Abundance (Log)") +
+      theme(legend.title = element_blank(), legend.position = "bottom")
+    
     
     # Print the plot
     print(p)
