@@ -1,100 +1,25 @@
+# Load Required Libraries
 library(shiny)
 library(ggplot2)
 library(tidyverse)
+library(shinyWidgets)  # For knob inputs
 
-# Maximum value for contribution sliders
+# Define Maximum Value and Knob Size
 max_value <- 3
+knob_size <- "80px"  # Adjust this value to make knobs smaller or larger
 
-# Define UI
-ui <- fluidPage(
-  titlePanel("Tripartite Model Simulation"),
-  
-  sidebarLayout(
-    sidebarPanel(
-      # Simulation parameters with help text for guidance
-      sliderInput("tmax", "Simulation Time (tmax):",
-                  min = 50, max = 500, value = 100, step = 10),
-      helpText("Total number of time steps in the simulation."),
-      
-      # Uncomment if 'k' and 'b' are needed with their help texts
-      # sliderInput("k", "Parameter k:",
-      #             min = 1, max = 20, value = 10, step = 0.1),
-      # helpText("Description of parameter k."),
-      # sliderInput("b", "Parameter b:",
-      #             min = 50, max = 200, value = 100, step = 1),
-      # helpText("Description of parameter b."),
-      
-      # Absorption rates with explanations
-      sliderInput("dBV", "Bacterial Absorption Rate of Viruses (dBV):",
-                  min = 0.1, max = 1, value = 0.2, step = 0.1),
-      helpText("Rate at which bacteria absorb viruses."),
-      sliderInput("dHB", "Host Absorption Rate of Bacteria (dHB):",
-                  min = 0.1, max = 1, value = 0.3, step = 0.1),
-      helpText("Rate at which hosts absorb bacteria."),
-      
-      # Initial conditions with explanations
-      sliderInput("initial_H", "Initial Hosts:",
-                  min = 0, max = 100, value = 50, step = 5),
-      helpText("Initial number of hosts in the simulation."),
-      sliderInput("initial_B", "Initial Bacteria:",
-                  min = 0, max = 100, value = 50, step = 5),
-      helpText("Initial number of bacteria in the simulation."),
-      sliderInput("initial_V", "Initial Viruses:",
-                  min = 0, max = 100, value = 50, step = 5),
-      helpText("Initial number of viruses in the simulation.")
-    ),
-    
-    mainPanel(
-      plotOutput("distPlot"),
-      
-      # Contribution sliders with explanations
-      helpText("Contribution to the host next gen from holobionts H00, H01, H10, and H11."),
-      fluidRow(
-        column(3, sliderInput("FH1", "FH[1]:", min = 0, max = max_value, value = 1, step = 0.1)),
-        column(3, sliderInput("FH2", "FH[2]:", min = 0, max = max_value, value = 1, step = 0.1)),
-        column(3, sliderInput("FH3", "FH[3]:", min = 0, max = max_value, value = 1, step = 0.1)),
-        column(3, sliderInput("FH4", "FH[4]:", min = 0, max = max_value, value = 1, step = 0.1))
-      ),
-      
-      helpText("Contribution to the bacteria next gen from holobionts H00, H01, H10, and H11."),
-      fluidRow(
-        column(3, sliderInput("FB1", "FB[1]:", min = 0, max = max_value, value = 1, step = 0.1)),
-        column(3, sliderInput("FB2", "FB[2]:", min = 0, max = max_value, value = 1, step = 0.1)),
-        column(3, sliderInput("FB3", "FB[3]:", min = 0, max = max_value, value = 1, step = 0.1)),
-        column(3, sliderInput("FB4", "FB[4]:", min = 0, max = max_value, value = 1, step = 0.1))
-      ),
-      
-      helpText("Contribution to the virus next gen from holobionts H00, H01, H10, and H11."),
-      fluidRow(
-        column(3, sliderInput("FV1", "FV[1]:", min = 0, max = max_value, value = 1, step = 0.1)),
-        column(3, sliderInput("FV2", "FV[2]:", min = 0, max = max_value, value = 1, step = 0.1)),
-        column(3, sliderInput("FV3", "FV[3]:", min = 0, max = max_value, value = 1, step = 0.1)),
-        column(3, sliderInput("FV4", "FV[4]:", min = 0, max = max_value, value = 1, step = 0.1))
-      ),
-   
-      
-      # Randomize buttons
-      fluidRow(
-        column(3, actionButton("randomize_FH", "Randomize FH")),
-        column(3, actionButton("randomize_FB", "Randomize FB")),
-        column(3, actionButton("randomize_FV", "Randomize FV")),
-        column(3, actionButton("randomize_all", "Randomize All"))
-      )
-    )
-  )
-)
-
-# Define server logic
+# Define Server Logic First
 server <- function(input, output, session) {
   
-  # Helper function to randomize slider inputs
+  # Helper Function to Randomize Knob Inputs
   randomize_sliders <- function(prefix) {
     for (i in 1:4) {
-      updateSliderInput(session, paste0(prefix, i), value = runif(1, 0, max_value))
+      new_val <- runif(1, 0, max_value)
+      updateKnobInput(session, paste0(prefix, i), value = new_val)
     }
   }
   
-  # Observers for randomize buttons
+  # Observers for Randomize Buttons
   observeEvent(input$randomize_FH, {
     randomize_sliders("FH")
   })
@@ -113,10 +38,10 @@ server <- function(input, output, session) {
     randomize_sliders("FV")
   })
   
-  # Render the plot
+  # Render the Plot
   output$distPlot <- renderPlot({
     # -------- ERROR HANDLING ----------------------------
-    # Validate required inputs
+    # Validate Required Inputs
     req(input$tmax > 0)
     req(input$dBV > 0)
     req(input$dHB > 0)
@@ -124,7 +49,7 @@ server <- function(input, output, session) {
     req(input$initial_B >= 0)
     req(input$initial_V >= 0)
     
-    # Check that contribution vectors are numeric and non-negative
+    # Check that Contribution Vectors are Numeric and Non-negative
     contribution_inputs <- c(
       input$FH1, input$FH2, input$FH3, input$FH4,
       input$FB1, input$FB2, input$FB3, input$FB4,
@@ -142,16 +67,16 @@ server <- function(input, output, session) {
     # k <- input$k
     # b <- input$b
     
-    # Contribution vectors
+    # Contribution Vectors
     FH <- c(input$FH1, input$FH2, input$FH3, input$FH4)
     FB <- c(input$FB1, input$FB2, input$FB3, input$FB4)
     FV <- c(input$FV1, input$FV2, input$FV3, input$FV4)
     
-    # Absorption rates
+    # Absorption Rates
     dBV <- input$dBV
     dHB <- input$dHB
     
-    # Initial conditions
+    # Initial Conditions
     H <- numeric(tmax)
     B <- numeric(tmax)
     V <- numeric(tmax)
@@ -159,7 +84,7 @@ server <- function(input, output, session) {
     B[1] <- input$initial_B
     V[1] <- input$initial_V
     
-    # Preallocate additional variables
+    # Preallocate Additional Variables
     B0 <- numeric(tmax)  # Bacteria with no virus
     B1 <- numeric(tmax)  # Bacteria with at least one virus
     H00 <- numeric(tmax) # Hosts with 0 empty bact and 0 infected bact
@@ -169,17 +94,17 @@ server <- function(input, output, session) {
     
     # -------- FUNCTIONS ------------------------
     
-    # Return the absorption rate of viruses by bacteria (placeholder)
+    # Absorption Rate of Viruses by Bacteria (Placeholder)
     aBV <- function(r) {
       dBV  # Currently returns a constant, can be extended later
     }
     
-    # Return the absorption rate of bacteria by hosts (placeholder)
+    # Absorption Rate of Bacteria by Hosts (Placeholder)
     aHB <- function(r) {
       dHB  # Currently returns a constant, can be extended later
     }
     
-    # Density parameters
+    # Density Parameters
     muBV <- function(V_t, B_t) {
       ifelse(B_t <= 0, 0, aBV(B_t) * (V_t / B_t))
     }
@@ -188,20 +113,20 @@ server <- function(input, output, session) {
       ifelse(H_t <= 0, 0, aHB(H_t) * (B_t / H_t))
     }
     
-    # Probability functions
+    # Probability Functions
     P0 <- function(d) dpois(0, d)
     P1 <- function(d) 1 - P0(d)
     
     # =============== MAIN SIMULATION ==========================
-    # Try-catch block for error handling
+    # Try-Catch Block for Error Handling
     tryCatch({
       for (t in 1:tmax) {
-        # Update bacteria infection status
+        # Update Bacteria Infection Status
         muBV_val <- muBV(V[t], B[t])
         B0[t] <- P0(muBV_val) * B[t]
         B1[t] <- P1(muBV_val) * B[t]
         
-        # Update host infection status
+        # Update Host Infection Status
         muHB_B0 <- muHB(H[t], B0[t])
         muHB_B1 <- muHB(H[t], B1[t])
         
@@ -210,19 +135,19 @@ server <- function(input, output, session) {
         H10[t] <- P1(muHB_B0) * P0(muHB_B1) * H[t]
         H11[t] <- P1(muHB_B0) * P1(muHB_B1) * H[t]
         
-        # Ensure no negative values
+        # Ensure No Negative Values
         H00[t] <- max(0, H00[t])
         H01[t] <- max(0, H01[t])
         H10[t] <- max(0, H10[t])
         H11[t] <- max(0, H11[t])
         
         if (t < tmax) {
-          # Update populations for next time step
+          # Update Populations for Next Time Step
           H[t + 1] <- sum(FH * c(H00[t], H01[t], H10[t], H11[t]))
           B[t + 1] <- sum(FB * c(H00[t], H01[t], H10[t], H11[t]))
           V[t + 1] <- sum(FV * c(H00[t], H01[t], H10[t], H11[t]))
           
-          # Ensure no negative values
+          # Ensure No Negative Values
           H[t + 1] <- max(0, H[t + 1])
           B[t + 1] <- max(0, B[t + 1])
           V[t + 1] <- max(0, V[t + 1])
@@ -234,7 +159,7 @@ server <- function(input, output, session) {
     })
     
     # -------- DATA PREPARATION -------------------------
-    # Create a data frame with simulation results
+    # Create a Data Frame with Simulation Results
     data <- tibble(
       t = 1:tmax,
       H = H, B = B, V = V,
@@ -242,15 +167,15 @@ server <- function(input, output, session) {
       H00 = H00, H01 = H01, H10 = H10, H11 = H11
     )
     
-    # Remove non-finite or NA values
-    data <- data %>% filter_all(all_vars(is.finite(.)))
+    # Remove Non-finite or NA Values
+    rdata <- data %>% filter_all(all_vars(is.finite(.)))
     
-    # Transform data for plotting
+    # Transform Data for Plotting
     melted_data <- data %>%
       pivot_longer(cols = -t, names_to = "variable", values_to = "value") %>%
       filter(value > 0)  # Remove zero or negative values for log scale
     
-    # Check if there is data to plot
+    # Check if There is Data to Plot
     validate(
       need(nrow(melted_data) > 0, "No data to plot. Please adjust your inputs.")
     )
@@ -275,5 +200,145 @@ server <- function(input, output, session) {
   })
 }
 
-# Run the application 
+# Define UI Below the Server Logic
+ui <- fluidPage(
+  # Custom CSS for Enhanced Aesthetics
+  tags$head(
+    tags$style(HTML("
+      /* Style for the contribution matrix table */
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 20px;
+      }
+      th, td {
+        padding: 10px;
+        text-align: center;
+        border: 1px solid #ddd;
+      }
+      th {
+        background-color: #f2f2f2;
+        font-weight: bold;
+      }
+      /* Optional: Hover effect for table cells */
+      td:hover {
+        background-color: #f9f9f9;
+      }
+    "))
+  ),
+  
+  titlePanel("Tripartite Model Simulation"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      # Simulation Parameters with Help Text
+      sliderInput("tmax", "Simulation Time (tmax):",
+                  min = 50, max = 500, value = 100, step = 10),
+      
+      # Absorption Rates with Explanations
+      sliderInput("dBV", "Bacterial Absorption Rate of Viruses (dBV):",
+                  min = 0.0, max = 1, value = 0.2, step = 0.001),
+      
+      sliderInput("dHB", "Host Absorption Rate of Bacteria (dHB):",
+                  min = 0.0, max = 1, value = 0.3, step = 0.001),
+      
+      # Initial Conditions with Explanations
+      sliderInput("initial_H", "Initial Hosts:",
+                  min = 0, max = 10000, value = 50, step = 1),
+      sliderInput("initial_B", "Initial Bacteria:",
+                  min = 0, max = 10000, value = 50, step = 1),
+      sliderInput("initial_V", "Initial Viruses:",
+                  min = 0, max = 10000, value = 50, step = 1),
+
+    ),
+    
+    mainPanel(
+      plotOutput("distPlot"),
+      
+      # Explanatory Text Above the Contribution Matrix
+      helpText("Contribution Matrix: how many new individuals (Host, Bacteria, or Virus) each holobiont (H00, H01, H10, or H11) creates."),
+      
+      # Contribution Matrix Grid
+      tags$table(
+        # Header Row with Column Names
+        tags$tr(
+          tags$th(NULL),  # Empty top-left corner
+          lapply(c("H00", "H01", "H10", "H11"), function(col_label) {
+            tags$th(col_label)
+          })
+        ),
+        # Hosts Row
+        tags$tr(
+          tags$td("Hosts"),
+          lapply(c("FH1", "FH2", "FH3", "FH4"), function(input_id) {
+            tags$td(
+              knobInput(
+                inputId = input_id,
+                label = NULL,  # No label inside the cell
+                value = 1,
+                min = 0,
+                max = max_value,
+                step = 0.1,
+                displayPrevious = FALSE,
+                fgColor = "#66C2A5",  # Host-related color
+                inputColor = "#1F78B4",
+                width = knob_size  # Use the knob_size variable
+              )
+            )
+          })
+        ),
+        # Bacteria Row
+        tags$tr(
+          tags$td("Bacteria"),
+          lapply(c("FB1", "FB2", "FB3", "FB4"), function(input_id) {
+            tags$td(
+              knobInput(
+                inputId = input_id,
+                label = NULL,
+                value = 1,
+                min = 0,
+                max = max_value,
+                step = 0.1,
+                displayPrevious = FALSE,
+                fgColor = "#FC8D62",  # Bacteria-related color
+                inputColor = "#E78AC3",
+                width = knob_size
+              )
+            )
+          })
+        ),
+        # Viruses Row
+        tags$tr(
+          tags$td("Viruses"),
+          lapply(c("FV1", "FV2", "FV3", "FV4"), function(input_id) {
+            tags$td(
+              knobInput(
+                inputId = input_id,
+                label = NULL,
+                value = 1,
+                min = 0,
+                max = max_value,
+                step = 0.1,
+                displayPrevious = FALSE,
+                fgColor = "#8DA0CB",  # Virus-related color
+                inputColor = "#E5C494",
+                width = knob_size
+              )
+            )
+          })
+        )
+      ),
+      
+      # Randomize Buttons Below the Grid
+      fluidRow(
+        column(3, actionButton("randomize_FH", "Randomize FH")),
+        column(3, actionButton("randomize_FB", "Randomize FB")),
+        column(3, actionButton("randomize_FV", "Randomize FV")),
+        column(3, actionButton("randomize_all", "Randomize All"))
+      )
+    )
+  )
+)
+
+# Run the Application
 shinyApp(ui = ui, server = server)
