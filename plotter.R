@@ -262,8 +262,8 @@ for (scenario_name in names(scenarios)) {
     if (is.null(sim_data)) {
       next
     }
-    
-    # CALCULATE R0 USING THE NEW FUNCTION
+
+    # Calculate average R0 over the last n timesteps
     R0_avg <- calculate_avg_R0(sim_data, average_timesteps)
     
     # Append to R0_results only if R0_avg is not NA
