@@ -1,7 +1,5 @@
 # ---------------------------#
 # Virus Growth Rate Analysis
-# Removed the simulation code from the Shiny app for this section. 
-# (WARNING: coded up late at night, not bug checked)
 # ---------------------------#
 
 # Load Required Libraries
@@ -10,7 +8,25 @@ library(dplyr)
 library(tidyr)
 library(ggplot2)
 
-# -------- DEFINE SCENARIOS AS FUNCTIONS ----------------------------
+# ---------------------------#
+# Define Biological Scenarios
+# ---------------------------#
+# Each scenario represents a different biological interaction between hosts, bacteria, and viruses.
+# Scenarios include how bacteria affect hosts and how viruses behave (e.g., lytic).
+#
+# A line like FH <- c(1,2,3,4) means that each holobiont H00 creates one new
+# host, H01 creates two, H10 creates three, and H11 creates four. FB and FV
+# calculate the next generation of bacteria and viruses, respectively.
+#
+# Recall that
+# H00 = host with no bacteria at all
+# H01 = host with at least one infected bacteria, no uninfected bacteria
+# H10 = host with no infected bacteria, at least one uninfected
+# H11 = host with at least one of both kinds of bacteria
+#
+# Note that we have defined the senarios as a function to allow for easy 
+# modification and reuse.
+
 define_scenarios <- function() {
   scenarios <- list(
     bacteria_help_slightly_lytic = list(
@@ -103,7 +119,7 @@ simulate_dynamics <- function(scenario, k, phi, b,
   B[1] <- initial_B
   V[1] <- initial_V
   
-  # Preallocate Additional Variables
+  # Preallocate data lists for timeseries
   B0 <- numeric(tmax)  # Bacteria with no virus
   B1 <- numeric(tmax)  # Bacteria with at least one virus
   H00 <- numeric(tmax) # Hosts with 0 empty bact and 0 infected bact
@@ -163,13 +179,42 @@ simulate_dynamics <- function(scenario, k, phi, b,
   return(data)
 }
 
+# -------- R0 CALCULATION FUNCTION ----------------------------
+calculate_avg_R0 <- function(sim_data, average_timesteps = 50) {
+  # Ensure there are enough timesteps to calculate R0
+  if (nrow(sim_data) < (average_timesteps + 1)) {
+    warning(paste("Not enough timesteps to calculate R0. Required:", average_timesteps + 1, 
+                  "Found:", nrow(sim_data)))
+    return(NA)
+  }
+  
+  # Extract the last (average_timesteps + 1) V values to calculate growth rates
+  V_recent <- tail(sim_data$V, average_timesteps + 1)
+  
+  # Split into V_prev (V(t)) and V_next (V(t+1))
+  V_prev <- V_recent[-length(V_recent)] # V(t)
+  V_next <- V_recent[-1]               # V(t+1)
+  
+  # Calculate growth rates R(t) = V(t+1) / V(t)
+  growth_rates <- V_next / V_prev
+  
+  # Handle cases where V(t) is zero to avoid division by zero
+  growth_rates[V_prev == 0] <- NA
+  growth_rates[is.infinite(growth_rates) | is.nan(growth_rates)] <- NA
+  
+  # Calculate average R0, excluding NA values
+  R0_avg <- mean(growth_rates, na.rm = TRUE)
+  
+  return(R0_avg)
+}
+
 # -------- MAIN ANALYSIS ----------------------------
 
 # Define Scenarios
 scenarios <- define_scenarios()
 
 # Define Burst Size (b) Values to Sweep Over
-b_values <- seq(1, 1000, by = 5)  # Burst sizes from 1 to 1000 in steps of 5
+b_values <- seq(1, 800, by = 5)  # Burst sizes from 1 to 1000 in steps of 5
 
 # Initialize a Data Frame to Store R0 Results
 R0_results <- tibble(
@@ -202,8 +247,8 @@ for (scenario_name in names(scenarios)) {
         phi = fixed_phi,
         b = b,
         tmax = 200,         # Maximum time steps
-        dBV = 0.1,          # Absorption rate dBV
-        dHB = 0.1,         # Absorption rate dHB
+        dBV = 0.2,          # Absorption rate dBV
+        dHB = 0.1,          # Absorption rate dHB
         initial_H = 50,     # Initial Hosts
         initial_B = 100,    # Initial Bacteria
         initial_V = 200     # Initial Viruses
@@ -218,36 +263,19 @@ for (scenario_name in names(scenarios)) {
       next
     }
     
-    # Ensure there are enough timesteps to calculate R0
-    if (nrow(sim_data) < (average_timesteps + 1)) {
-      warning(paste("Not enough timesteps for scenario", scenario_name, "with b =", b, 
-                    ". Required:", average_timesteps + 1, "Found:", nrow(sim_data)))
-      next
+    # CALCULATE R0 USING THE NEW FUNCTION
+    R0_avg <- calculate_avg_R0(sim_data, average_timesteps)
+    
+    # Append to R0_results only if R0_avg is not NA
+    if (!is.na(R0_avg)) {
+      R0_results <- R0_results %>%
+        add_row(
+          scenario = scenario_name,
+          description = description,
+          b = b,
+          R0 = R0_avg
+        )
     }
-    
-    # Extract the last (average_timesteps + 1) V values to calculate growth rates
-    V_recent <- tail(sim_data$V, average_timesteps + 1)
-    
-    # Calculate R0 as the average of V(t+1)/V(t) over the last 'average_timesteps'
-    V_prev <- V_recent[-length(V_recent)]
-    V_next <- V_recent[-1]
-    growth_rates <- V_next / V_prev
-    
-    # Handle cases where V(t) is zero to avoid division by zero
-    growth_rates[V_prev == 0] <- NA
-    growth_rates[is.infinite(growth_rates) | is.nan(growth_rates)] <- NA
-    
-    # Calculate average R0, excluding NA values
-    R0_avg <- mean(growth_rates, na.rm = TRUE)
-    
-    # Append to R0_results
-    R0_results <- R0_results %>%
-      add_row(
-        scenario = scenario_name,
-        description = description,
-        b = b,
-        R0 = R0_avg
-      )
     
     # Progress update
     cat(sprintf("Completed %d of %d simulations\n", current_simulation, total_simulations))
@@ -255,7 +283,7 @@ for (scenario_name in names(scenarios)) {
   }
 }
 
-# Remove any rows with NA R0 (if any)
+# Remove any rows with NA R0 (if any) - redundant now but kept for safety
 R0_results <- R0_results %>% filter(!is.na(R0))
 
 # Display the R0 Results
@@ -302,7 +330,7 @@ ggplot(R0_results, aes(x = b, y = R0, color = scenario, shape = scenario)) +
     color = "Scenario",
     shape = "Scenario"
   ) +
-  scale_x_log10() +
+  #scale_x_log10() +  # Use logarithmic scale for burst size if necessary
   theme_bw() +
   theme(
     legend.position = "bottom",
