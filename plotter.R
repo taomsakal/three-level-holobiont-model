@@ -182,7 +182,7 @@ simulate_dynamics <- function(scenario, k, phi, b,
 
 # -------- R0 CALCULATION FUNCTION ----------------------------
 # Calculate the average growth rate of the given population over the
-# last timesteps.
+# last n timesteps.
 calculate_avg_R0 <- function(sim_data, population = "V", n = 50) {
   # Validate population input
   if (!population %in% c("H", "B", "V")) {
