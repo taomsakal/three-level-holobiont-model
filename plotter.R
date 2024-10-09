@@ -8,6 +8,11 @@ library(dplyr)
 library(tidyr)
 library(ggplot2)
 
+# Libraries for parallel processing
+library(furrr)
+library(future)
+library(progressr)
+
 # ---------------------------#
 # Define Biological Scenarios
 # ---------------------------#
@@ -86,17 +91,12 @@ simulate_dynamics <- function(scenario, k, phi, b,
                               tmax = 200, 
                               dBV = 0.1, dHB = 0.05, 
                               initial_H = 50, initial_B = 100, initial_V = 200) {
+  
   # Compute contribution vectors based on the scenario
   contributions <- scenario$compute_contributions(k, phi, b)
   FH <- contributions$FH
   FB <- contributions$FB
   FV <- contributions$FV
-  
-  # Validate contributions
-  contribution_inputs <- c(FH, FB, FV)
-  if (any(is.na(contribution_inputs)) || any(contribution_inputs < 0)) {
-    stop("Contribution values must be non-negative numbers.")
-  }
   
   # Density Parameters
   muBV <- function(V_t, B_t) {
@@ -179,27 +179,39 @@ simulate_dynamics <- function(scenario, k, phi, b,
   return(data)
 }
 
+
 # -------- R0 CALCULATION FUNCTION ----------------------------
-calculate_avg_R0 <- function(sim_data, average_timesteps = 50) {
+# Calculate the average growth rate of the given population over the
+# last timesteps.
+calculate_avg_R0 <- function(sim_data, population = "V", n = 50) {
+  # Validate population input
+  if (!population %in% c("H", "B", "V")) {
+    stop("Population must be one of 'H', 'B', or 'V'.")
+  }
+  
   # Ensure there are enough timesteps to calculate R0
-  if (nrow(sim_data) < (average_timesteps + 1)) {
-    warning(paste("Not enough timesteps to calculate R0. Required:", average_timesteps + 1, 
+  if (nrow(sim_data) < (n + 1)) {
+    warning(paste("Not enough timesteps to calculate R0 for", population, 
+                  ". Required:", n + 1, 
                   "Found:", nrow(sim_data)))
     return(NA)
   }
   
-  # Extract the last (average_timesteps + 1) V values to calculate growth rates
-  V_recent <- tail(sim_data$V, average_timesteps + 1)
+  # Select the appropriate column based on population
+  population_col <- sim_data[[population]]
   
-  # Split into V_prev (V(t)) and V_next (V(t+1))
-  V_prev <- V_recent[-length(V_recent)] # V(t)
-  V_next <- V_recent[-1]               # V(t+1)
+  # Extract the last (n + 1) values to calculate growth rates
+  pop_recent <- tail(population_col, n + 1)
   
-  # Calculate growth rates R(t) = V(t+1) / V(t)
-  growth_rates <- V_next / V_prev
+  # Split into pop_prev (Pop(t)) and pop_next (Pop(t+1))
+  pop_prev <- pop_recent[-length(pop_recent)] # Pop(t)
+  pop_next <- pop_recent[-1]                   # Pop(t+1)
   
-  # Handle cases where V(t) is zero to avoid division by zero
-  growth_rates[V_prev == 0] <- NA
+  # Calculate growth rates R0(t) = Pop(t+1) / Pop(t)
+  growth_rates <- pop_next / pop_prev
+  
+  # Handle cases where Pop(t) is zero to avoid division by zero
+  growth_rates[pop_prev == 0] <- NA
   growth_rates[is.infinite(growth_rates) | is.nan(growth_rates)] <- NA
   
   # Calculate average R0, excluding NA values
@@ -208,38 +220,50 @@ calculate_avg_R0 <- function(sim_data, average_timesteps = 50) {
   return(R0_avg)
 }
 
-# -------- MAIN ANALYSIS ----------------------------
+
+
+# -------- MAIN ANALYSIS WITH FUTURE AND FURRR PARALLEL PROCESSING ----------------------------
+# Sweep through the various bust sizes. We do this in a parallel manner.
+# (Note the parallelzation part is mostly written by GPT o1-mini. Seems to work
+# the same as before in all my tests, just must faster.)
 
 # Define Scenarios
 scenarios <- define_scenarios()
 
 # Define Burst Size (b) Values to Sweep Over
-b_values <- seq(1, 800, by = 5)  # Burst sizes from 1 to 1000 in steps of 5
+b_values <- seq(1, 800, by = 5)  # Burst sizes from 1 to 800 in steps of 5
 
-# Initialize a Data Frame to Store R0 Results
-R0_results <- tibble(
-  scenario = character(),
-  description = character(),
-  b = numeric(),
-  R0 = numeric()
+# Create a Grid of All Scenario and b Combinations
+simulation_grid <- expand.grid(
+  scenario_name = names(scenarios),
+  b = b_values,
+  stringsAsFactors = FALSE
 )
 
-# Define Number of Timesteps Over Which to Average R0
-average_timesteps <- 50  # Last 50 timesteps
+# Set Up Future Plan
+# Use multisession for parallel processing on multiple cores
+# You can also use multicore on Unix-like systems, but multisession is more portable
+num_cores <- future::availableCores() - 1  # Reserve one core for the system
+plan(multisession, workers = num_cores)
 
-# Total number of simulations for progress tracking
-total_simulations <- length(scenarios) * length(b_values)
-current_simulation <- 1
+# Initialize Progress Handler
+handlers(global = TRUE)
+handlers("txtprogressbar")  # Use text-based progress bar
 
-# Loop Through Each Scenario and Each b Value
-for (scenario_name in names(scenarios)) {
-  scenario <- scenarios[[scenario_name]]
-  description <- scenario$description
-  fixed_k <- scenario$fixed_params$k
-  fixed_phi <- scenario$fixed_params$phi
+# Define a progress handler using progressr and furrr
+progressr::with_progress({
   
-  for (b in b_values) {
-    # Run Simulation
+  p <- progressr::progressor(along = 1:nrow(simulation_grid))
+  
+  # Define a function to run a single simulation
+  run_simulation <- function(scenario_name, b) {
+    # Retrieve the scenario details
+    scenario <- scenarios[[scenario_name]]
+    description <- scenario$description
+    fixed_k <- scenario$fixed_params$k
+    fixed_phi <- scenario$fixed_params$phi
+    
+    # Run Simulation with Error Handling
     sim_data <- tryCatch({
       simulate_dynamics(
         scenario = scenario,
@@ -254,87 +278,132 @@ for (scenario_name in names(scenarios)) {
         initial_V = 200     # Initial Viruses
       )
     }, error = function(e) {
+      # Log the error message
       warning(paste("Simulation failed for scenario", scenario_name, "with b =", b, ":", e$message))
       return(NULL)
     })
     
-    # Skip to next iteration if simulation failed
+    # If simulation failed, return NULL
     if (is.null(sim_data)) {
-      next
-    }
-
-    # Calculate average R0 over the last n timesteps
-    R0_avg <- calculate_avg_R0(sim_data, average_timesteps)
-    
-    # Append to R0_results only if R0_avg is not NA
-    if (!is.na(R0_avg)) {
-      R0_results <- R0_results %>%
-        add_row(
-          scenario = scenario_name,
-          description = description,
-          b = b,
-          R0 = R0_avg
-        )
+      return(NULL)
     }
     
-    # Progress update
-    cat(sprintf("Completed %d of %d simulations\n", current_simulation, total_simulations))
-    current_simulation <- current_simulation + 1
+    # Define Number of Timesteps Over Which to Average R0
+    average_timesteps <- 50  # Last 50 timesteps
+    
+    # Calculate average R0 for Hosts, Bacteria, and Viruses
+    R0_H_avg <- calculate_avg_R0(sim_data, population = "H", average_timesteps)
+    R0_B_avg <- calculate_avg_R0(sim_data, population = "B", average_timesteps)
+    R0_V_avg <- calculate_avg_R0(sim_data, population = "V", average_timesteps)
+    
+    # Update progress
+    p()
+    
+    # Return a tibble row if all R0_avg are not NA
+    if (!is.na(R0_H_avg) && !is.na(R0_B_avg) && !is.na(R0_V_avg)) {
+      return(tibble(
+        scenario = scenario_name,
+        description = description,
+        R0_H = R0_H_avg,
+        R0_B = R0_B_avg,
+        R0_V = R0_V_avg
+      ))
+    } else {
+      return(NULL)
+    }
   }
-}
+  
+  # Execute simulations in parallel with furrr::future_pmap
+  R0_results <- simulation_grid %>%
+    mutate(result = furrr::future_pmap(
+      list(scenario_name, b),
+      run_simulation
+    )) %>%
+    # Remove rows where result is NULL (failed simulations)
+    filter(!sapply(result, is.null)) %>%
+    # Unnest the result column to get a flat data frame
+    unnest(result)
+})
 
-# Remove any rows with NA R0 (if any) - redundant now but kept for safety
-R0_results <- R0_results %>% filter(!is.na(R0))
+# Reset future plan to sequential
+plan(sequential)
 
 # Display the R0 Results
 print(R0_results)
 
 # -------- VISUALIZE RESULTS ----------------------------
 
-# Beautify the plot
-ggplot(R0_results, aes(x = b, y = R0, color = scenario, shape = scenario)) +
-  geom_point(size = 2) +
-  geom_line(aes(group = scenario), size = 1) +
+# Reshape the R0_results data to long format
+R0_long <- R0_results %>%
+  pivot_longer(
+    cols = starts_with("R0_"),
+    names_to = "Population",
+    values_to = "R0"
+  ) %>%
+  mutate(
+    Population = recode(Population,
+                        "R0_H" = "Host",
+                        "R0_B" = "Bacteria",
+                        "R0_V" = "Virus")
+  )
+
+# Define color and shape mappings for scenarios
+scenario_colors <- c(
+  "bacteria_help_slightly_lytic" = "#1b9e77",
+  "commensal_bacteria_slightly_lytic" = "#d95f02",
+  "parasitic_bacteria_slightly_lytic" = "#7570b3",
+  "bacterial_mutualism_more_nuance" = "#e7298a"
+)
+
+scenario_shapes <- c(
+  "bacteria_help_slightly_lytic" = 16,
+  "commensal_bacteria_slightly_lytic" = 17,
+  "parasitic_bacteria_slightly_lytic" = 15,
+  "bacterial_mutualism_more_nuance" = 18
+)
+
+# Create the combined plot with facets
+combined_plot <- ggplot(R0_long, aes(x = b, y = R0, color = scenario, shape = scenario)) +
+  geom_point(size = 1.5, alpha = 0.7) +
+  geom_line(aes(group = scenario), size = 1, alpha = 0.7) +
   scale_color_manual(
-    values = c(
-      "bacteria_help_slightly_lytic" = "#1b9e77",
-      "commensal_bacteria_slightly_lytic" = "#d95f02",
-      "parasitic_bacteria_slightly_lytic" = "#7570b3",
-      "bacterial_mutualism_more_nuance" = "#e7298a"
-    ),
+    values = scenario_colors,
     labels = c(
-      "Bacteria Help Hosts",
-      "Commensal",
-      "Parasitic",
-      "Mutualistic"
+      "bacteria_help_slightly_lytic" = "Bacteria Help Hosts",
+      "commensal_bacteria_slightly_lytic" = "Commensal",
+      "parasitic_bacteria_slightly_lytic" = "Parasitic",
+      "bacterial_mutualism_more_nuance" = "Mutualistic"
     )
   ) +
   scale_shape_manual(
-    values = c(
-      "bacteria_help_slightly_lytic" = 16,
-      "commensal_bacteria_slightly_lytic" = 17,
-      "parasitic_bacteria_slightly_lytic" = 15,
-      "bacterial_mutualism_more_nuance" = 18
-    ),
+    values = scenario_shapes,
     labels = c(
-      "Bacteria Help Hosts",
-      "Commensal",
-      "Parasitic",
-      "Mutualistic"
+      "bacteria_help_slightly_lytic" = "Bacteria Help Hosts",
+      "commensal_bacteria_slightly_lytic" = "Commensal",
+      "parasitic_bacteria_slightly_lytic" = "Parasitic",
+      "bacterial_mutualism_more_nuance" = "Mutualistic"
     )
   ) +
   labs(
-    title = expression(paste("Average Virus Growth Rate ", R[0], " vs Burst Size (", b, ")")),
+    title = "Average Growth Rates (R0) vs Burst Size (b) for Hosts, Bacteria, and Viruses",
     x = "Burst Size (b)",
     y = expression(R[0]),
     color = "Scenario",
     shape = "Scenario"
   ) +
-  #scale_x_log10() +  # Use logarithmic scale for burst size if necessary
+  facet_wrap(~ Population, scales = "free_y") +  # Create separate panels for each population
+  expand_limits(y = 0) +  # Ensure y-axis starts at zero
   theme_bw() +
   theme(
     legend.position = "bottom",
     legend.title = element_blank(),
     text = element_text(size = 12),
-    plot.title = element_text(hjust = 0.5)
+    plot.title = element_text(hjust = 0.5),
+    strip.text = element_text(size = 14)  # Increase facet label size
   )
+
+# Display the combined plot
+print(combined_plot)
+
+# Optionally, save the plot
+# ggsave("Combined_R0_vs_b.png", plot = combined_plot, width = 12, height = 8, dpi = 300)
